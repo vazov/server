@@ -47,7 +47,9 @@ int Respond(int fd, char * buf, int n){
   //printf("Found path: \"%s\"\n", path);
 
   FILE * fh=fopen(path, "r");
+  int g = open(path, O_RDONLY);
   if (fh){
+	struct stat stat_buf;  /* hold information about input file */
 	int n, len=0;  
     std::string res_;	
     while ((n = std::fgetc(fh)) != EOF) { 
@@ -60,11 +62,13 @@ int Respond(int fd, char * buf, int n){
     ss << res_.size();
     ss << "\r\n";
     ss << "Content-Type: text/html";
-    ss << "\r\n";
-    ss << res_;
+    //ss << "\r\n";
+    //ss << res_;
     ss << "\r\n\r\n";
     page = ss.str();
-    send(fd, page.c_str(), strlen(page.c_str()), 0);  
+    send(fd, page.c_str(), strlen(page.c_str()), 0);
+    fstat(g, &stat_buf);
+    sendfile(fd, g, NULL, stat_buf.st_size);  
     fclose(fh);
   } else {
 	ss << "HTTP/1.0 404 NOT FOUND";
@@ -110,7 +114,7 @@ int main(int argc , char *argv[])
                    exit(EXIT_FAILURE);
       }
 
-  printf("ip=%s; port=%s; dir=%s\n", ip, port, dir);
+  //printf("ip=%s; port=%s; dir=%s\n", ip, port, dir);
   
   
   //make daemon
