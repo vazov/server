@@ -9,14 +9,19 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sstream>
+#include <iostream>
 //path to directory
 char *dir = NULL;
 
 //the thread function
 void *connection_handler(void *);
 
-/* Parse and return file handle for http get request */
-int OpenFile(char * buf, int n){
+int Respond(int fd, char * buf, int n){
+  
+  std::string page;
+  std::stringstream ss; 
+  //  printf("%d data received: \n%s\n", fd, buf);
   int i;
   char path[2000];
   char file_name[1024];
@@ -26,8 +31,12 @@ int OpenFile(char * buf, int n){
   if (!buf[0]=='G' || !buf[1]=='E' || !buf[2]=='T' || !buf[3]==' ')
     return 0;
   // copy the string
-  for (i=0; i < n && buf[i+4]!=' '; i++)
-    file_name[i]=buf[i+4];  
+  for (i=0; i < n && buf[i+4]!=' '; i++) {
+    char e = buf[i+4];
+    if (e == '?') { file_name[i]= '\x00'; }
+    else { file_name[i]= buf[i+4]; }
+  }
+      
   strcat(path, dir);
   strcat(path, file_name);  
   // put null on end of path
@@ -35,27 +44,41 @@ int OpenFile(char * buf, int n){
   // if the syntax doesn't have a space following a path then return
   if (buf[i+4]!=' ' || i == 0)
     return 0;
-  printf("Found path: \"%s\"\n", path);
-  return (open(path, O_RDONLY));
-}
+  //printf("Found path: \"%s\"\n", path);
 
-void Respond(int fd, char * buf, int n){
-  char badresponse[1024] = {"HTTP/1.0 404 Not Found\r\n\r\n<HTML><HEAD><meta http-equiv=\"content-type\" content=\"text/html;charset=utf-8\">\r\n<TITLE>Not Found</TITLE></HEAD><BODY>\r\n<H1>Not Found</H1>\r\n</BODY></HTML>\r\n\r\n"};
-  char goodresponse[1024] = {"HTTP/1.0 200 OK\r\n\r\n<HTML><HEAD><meta http-equiv=\"content-type\" content=\"text/html;charset=utf-8\">\r\n</HEAD></HTML>\r\n\r\n"};
-  int fh; 
-  //  printf("%d data received: \n%s\n", fd, buf);
-  fh = OpenFile(buf, n);
-  if (fh > 0){
-    struct stat stat_buf;  /* hold information about input file */
-    send(fd, goodresponse, strlen(goodresponse), 0);
-    /* size and permissions of fh */
-    fstat(fh, &stat_buf);
-    sendfile(fd, fh, NULL, stat_buf.st_size);
-    close(fh);
+  FILE * fh=fopen(path, "r");
+  if (fh){
+	int n, len=0;  
+    std::string res_;	
+    while ((n = std::fgetc(fh)) != EOF) { 
+		res_+=(char)n;
+		len++;
+    }
+    ss << "HTTP/1.0 200 OK";
+    ss << "\r\n";
+    ss << "Content-length: ";
+    ss << res_.size();
+    ss << "\r\n";
+    ss << "Content-Type: text/html";
+    ss << "\r\n";
+    ss << res_;
+    ss << "\r\n\r\n";
+    page = ss.str();
+    send(fd, page.c_str(), strlen(page.c_str()), 0);  
+    fclose(fh);
   } else {
-    send(fd, badresponse, strlen(badresponse), 0);
+	ss << "HTTP/1.0 404 NOT FOUND";
+    ss << "\r\n";
+    ss << "Content-length: ";
+    ss << 0;
+    ss << "\r\n";
+    ss << "Content-Type: text/html";
+    ss << "\r\n\r\n"; 
+    page = ss.str();
+    send(fd, page.c_str(), strlen(page.c_str()), 0);
   }
   close(fd);
+  return 0;
 }
 
 
@@ -116,7 +139,7 @@ int main(int argc , char *argv[])
     {
         printf("Could not create socket");
     }
-    puts("Socket created");
+    //puts("Socket created");
      
     //Prepare the sockaddr_in structure
     server.sin_family = AF_INET;
@@ -130,23 +153,23 @@ int main(int argc , char *argv[])
         perror("bind failed. Error");
         return 1;
     }
-    puts("bind done");
+    //puts("bind done");
      
     //Listen
     listen(socket_desc , 3);
      
     //Accept and incoming connection
-    puts("Waiting for incoming connections...");
+    //puts("Waiting for incoming connections...");
     c = sizeof(struct sockaddr_in);
      
     //Accept and incoming connection
-    puts("Waiting for incoming connections...");
+    //puts("Waiting for incoming connections...");
     c = sizeof(struct sockaddr_in);
 	pthread_t thread_id;
 	
     while( (client_sock = accept(socket_desc, (struct sockaddr *)&client, (socklen_t*)&c)) )
     {
-        puts("Connection accepted");
+        //puts("Connection accepted");
          
         if( pthread_create( &thread_id , NULL ,  connection_handler , (void*) &client_sock) < 0)
         {
